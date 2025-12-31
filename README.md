@@ -36,8 +36,8 @@ The widget is visible to **all dashboard users**, while configuration is restric
 
 ## Requirements
 
-- WordPress **6.0+**
-- PHP **7.4+**
+- WordPress **6.8+**
+- PHP **8.3+**
 - A valid **Cabin Analytics API key**
 
 ---
