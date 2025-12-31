@@ -79,6 +79,9 @@ From the same settings page:
 
 ---
 
+<img width="2062" height="671" alt="image" src="https://github.com/user-attachments/assets/4da2a7f8-eb1a-461a-b522-29908fe8c87b" />
+
+
 ## Dashboard Usage
 
 - The widget appears on the **WordPress Dashboard** for all users
