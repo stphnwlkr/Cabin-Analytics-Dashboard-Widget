@@ -239,7 +239,7 @@ final class WP_Cabin_Dashboard_Widget {
 
 		$page_views      = isset( $summary['page_views'] ) ? (int) $summary['page_views'] : null;
 		$unique_visitors = isset( $summary['unique_visitors'] ) ? (int) $summary['unique_visitors'] : null;
-		$bounce_rate     = isset( $summary['bounce_rate'] ) ? (float) $summary['bounce_rate'] : null;
+		$bounce_rate_pct = self::cabin_bounce_rate_percent( $summary );
 
 		$uv_pct = null;
 		if ( ! is_null( $unique_visitors ) && ! is_null( $page_views ) && $page_views > 0 ) {
@@ -288,11 +288,7 @@ final class WP_Cabin_Dashboard_Widget {
 					<div class="wp-cabin-metric-card">
 						<div class="wp-cabin-metric-card__label">Bounce rate</div>
 						<div class="wp-cabin-metric-card__value"><?php
-							echo esc_html(
-								is_null( $bounce_rate )
-									? '—'
-									: number_format_i18n( $bounce_rate * 100, 0 ) . '%'
-							);
+							echo esc_html( is_null( $bounce_rate_pct ) ? '—' : number_format_i18n( $bounce_rate_pct ) . '%' );
 						?></div>
 					</div>
 				</div>
@@ -559,7 +555,23 @@ final class WP_Cabin_Dashboard_Widget {
 		if ( $n >= 1000 ) return number_format_i18n( $n / 1000, 1 ) . 'K';
 		return number_format_i18n( $n, 0 );
 	}
+	private static function cabin_bounce_rate_percent( array $summary ) : ?int {
+		$uv = isset( $summary['unique_visitors'] ) && is_numeric( $summary['unique_visitors'] ) ? (float) $summary['unique_visitors'] : null;
+		$b  = isset( $summary['bounces'] ) && is_numeric( $summary['bounces'] ) ? (float) $summary['bounces'] : null;
 
+		if ( is_null( $uv ) || $uv <= 0 || is_null( $b ) || $b < 0 ) {
+			// Fallback to API field if present (assume 0–1 fraction).
+			if ( isset( $summary['bounce_rate'] ) && is_numeric( $summary['bounce_rate'] ) ) {
+				$r = (float) $summary['bounce_rate'];
+				if ( $r > 1 && $r <= 100 ) return (int) round( $r ); // if ever returned as percent
+				if ( $r >= 0 && $r <= 1 ) return (int) round( $r * 100 );
+			}
+		return null;
+	}
+
+	$rate = min( 1.0, max( 0.0, $b / $uv ) );
+	return (int) round( $rate * 100 );
+}	
 	/**
 	 * Cabin-style stacked bars:
 	 * - Dark base = unique visitors
