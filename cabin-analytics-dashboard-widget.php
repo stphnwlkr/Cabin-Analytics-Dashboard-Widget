@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Cabin Analytics Dashboard Widget
  * Description:       WordPress-native dashboard widget for Cabin Analytics (Summary + larger sparkline OR Cabin-style stacked Views/Visitors chart).
- * Version:           1.0.0
+ * Version:           1.0.1
  * Requires at least: 6.9
  * Requires PHP:      8.3
  * Author:            Stephen Walker
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 final class WP_Cabin_Dashboard_Widget {
 	const OPT_API_KEY        = 'wp_cabin_api_key';
 	const OPT_MODE           = 'wp_cabin_widget_mode';        // 'sparkline' | 'chart'
-	const OPT_DEFAULT_RANGE  = 'wp_cabin_default_range';      // 'today' | '7d' | '30d'
+	const OPT_DEFAULT_RANGE  = 'wp_cabin_default_range';      // '7d' | '14d' | '30d'
 	const NONCE_ACTION       = 'wp_cabin_widget';
 
 	public static function init() : void {
@@ -65,7 +65,7 @@ final class WP_Cabin_Dashboard_Widget {
 			[
 				'type'              => 'string',
 				'sanitize_callback' => [ __CLASS__, 'sanitize_range' ],
-				'default'           => '7d',
+				'default'           => '14d',
 			]
 		);
 
@@ -114,8 +114,8 @@ final class WP_Cabin_Dashboard_Widget {
 	}
 
 	public static function sanitize_range( $value ) : string {
-		$value = is_string( $value ) ? sanitize_key( $value ) : '7d';
-		return in_array( $value, [ 'today', '7d', '30d' ], true ) ? $value : '7d';
+		$value = is_string( $value ) ? sanitize_key( $value ) : '14d';
+		return in_array( $value, [ '7d', '14d', '30d' ], true ) ? $value : '14d';
 	}
 
 	public static function render_api_key_field() : void {
@@ -142,16 +142,16 @@ final class WP_Cabin_Dashboard_Widget {
 	}
 
 	public static function render_default_range_field() : void {
-		$val = (string) get_option( self::OPT_DEFAULT_RANGE, '7d' );
+		$val = (string) get_option( self::OPT_DEFAULT_RANGE, '14d' );
 		?>
 		<fieldset>
 			<label>
-				<input type="radio" name="<?php echo esc_attr( self::OPT_DEFAULT_RANGE ); ?>" value="today" <?php checked( $val, 'today' ); ?> />
-				Today
-			</label><br />
-			<label>
 				<input type="radio" name="<?php echo esc_attr( self::OPT_DEFAULT_RANGE ); ?>" value="7d" <?php checked( $val, '7d' ); ?> />
 				7d
+			</label><br />
+			<label>
+				<input type="radio" name="<?php echo esc_attr( self::OPT_DEFAULT_RANGE ); ?>" value="14d" <?php checked( $val, '14d' ); ?> />
+				14d
 			</label><br />
 			<label>
 				<input type="radio" name="<?php echo esc_attr( self::OPT_DEFAULT_RANGE ); ?>" value="30d" <?php checked( $val, '30d' ); ?> />
@@ -214,9 +214,9 @@ final class WP_Cabin_Dashboard_Widget {
 			return;
 		}
 
-		$default_range = (string) get_option( self::OPT_DEFAULT_RANGE, '7d' );
+		$default_range = (string) get_option( self::OPT_DEFAULT_RANGE, '14d' );
 		$range = isset( $_GET['cabin_range'] ) ? sanitize_key( (string) $_GET['cabin_range'] ) : $default_range;
-		if ( ! in_array( $range, [ 'today', '7d', '30d' ], true ) ) {
+		if ( ! in_array( $range, [ '7d', '14d', '30d' ], true ) ) {
 			$range = $default_range;
 		}
 
@@ -298,7 +298,6 @@ final class WP_Cabin_Dashboard_Widget {
 			// Larger sparkline to better match Cabin feel.
 			$spark_points = self::daily_points_from_timestamp_series( $daily_data, 'page_views' );
 			$spark_svg    = self::sparkline_svg( $spark_points, 520, 120 );
-
 			?>
 			<div class="wp-cabin-grid">
 				<div class="wp-cabin-metric">
@@ -319,11 +318,7 @@ final class WP_Cabin_Dashboard_Widget {
 				<div class="wp-cabin-metric">
 					<div class="wp-cabin-metric__label">Bounce rate</div>
 					<div class="wp-cabin-metric__value"><?php
-						echo esc_html(
-							is_null( $bounce_rate )
-								? '—'
-								: number_format_i18n( $bounce_rate * 100, 0 ) . '%'
-						);
+						echo esc_html( is_null( $bounce_rate_pct ) ? '—' : number_format_i18n( $bounce_rate_pct ) . '%' );
 					?></div>
 				</div>
 
@@ -345,9 +340,9 @@ final class WP_Cabin_Dashboard_Widget {
 		$base = remove_query_arg( [ 'cabin_refresh', '_wpnonce' ] );
 
 		$tabs = [
-			'today' => 'Today',
-			'7d'    => '7d',
-			'30d'   => '30d',
+			'7d'   => '7d',
+			'14d'  => '14d',
+			'30d'  => '30d',
 		];
 
 		$out  = '<div class="wp-cabin-header">';
@@ -452,11 +447,13 @@ final class WP_Cabin_Dashboard_Widget {
 	private static function range_dates( string $range ) : array {
 		$today = gmdate( 'Y-m-d' );
 
-		if ( 'today' === $range ) {
-			return [ $today, $today ];
+		$days = 14;
+		if ( '7d' === $range ) {
+			$days = 7;
+		} elseif ( '30d' === $range ) {
+			$days = 30;
 		}
 
-		$days = ( '30d' === $range ) ? 30 : 7;
 		$from_ts   = time() - ( ( $days - 1 ) * DAY_IN_SECONDS );
 		$date_from = gmdate( 'Y-m-d', $from_ts );
 
@@ -555,6 +552,11 @@ final class WP_Cabin_Dashboard_Widget {
 		if ( $n >= 1000 ) return number_format_i18n( $n / 1000, 1 ) . 'K';
 		return number_format_i18n( $n, 0 );
 	}
+
+	/**
+	 * Cabin bounce rate (matches Cabin UI behavior you confirmed):
+	 * bounce_rate = bounces / unique_visitors
+	 */
 	private static function cabin_bounce_rate_percent( array $summary ) : ?int {
 		$uv = isset( $summary['unique_visitors'] ) && is_numeric( $summary['unique_visitors'] ) ? (float) $summary['unique_visitors'] : null;
 		$b  = isset( $summary['bounces'] ) && is_numeric( $summary['bounces'] ) ? (float) $summary['bounces'] : null;
@@ -566,12 +568,13 @@ final class WP_Cabin_Dashboard_Widget {
 				if ( $r > 1 && $r <= 100 ) return (int) round( $r ); // if ever returned as percent
 				if ( $r >= 0 && $r <= 1 ) return (int) round( $r * 100 );
 			}
-		return null;
+			return null;
+		}
+
+		$rate = min( 1.0, max( 0.0, $b / $uv ) );
+		return (int) round( $rate * 100 );
 	}
 
-	$rate = min( 1.0, max( 0.0, $b / $uv ) );
-	return (int) round( $rate * 100 );
-}	
 	/**
 	 * Cabin-style stacked bars:
 	 * - Dark base = unique visitors
