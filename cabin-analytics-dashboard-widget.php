@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Cabin Analytics Dashboard Widget
  * Description:       WordPress-native dashboard widget for Cabin Analytics (Summary + larger sparkline OR Cabin-style stacked Views/Visitors chart).
- * Version:           1.0.1
+ * Version:           1.1.0
  * Requires at least: 6.9
  * Requires PHP:      8.3
  * Author:            Stephen Walker
@@ -20,8 +20,11 @@ final class WP_Cabin_Dashboard_Widget {
 	public static function init() : void {
 		add_action( 'admin_menu', [ __CLASS__, 'add_settings_page' ] );
 		add_action( 'admin_init', [ __CLASS__, 'register_settings' ] );
+
 		add_action( 'wp_dashboard_setup', [ __CLASS__, 'register_dashboard_widget' ] );
+
 		add_action( 'admin_head', [ __CLASS__, 'admin_css' ] );
+		add_action( 'admin_footer', [ __CLASS__, 'admin_js' ] );
 	}
 
 	/* -------------------------
@@ -247,7 +250,7 @@ final class WP_Cabin_Dashboard_Widget {
 		}
 
 		if ( 'chart' === $mode ) {
-			$chart_svg = self::views_visitors_stacked_svg( $daily_data );
+			$chart = self::views_visitors_stacked_render( $daily_data ); // svg + overlay + popover
 			?>
 			<div class="wp-cabin-chart-only">
 				<div class="wp-cabin-chart-wrap">
@@ -261,11 +264,20 @@ final class WP_Cabin_Dashboard_Widget {
 								<span class="wp-cabin-legend__swatch is-visitors" aria-hidden="true"></span>
 								Visitors
 							</span>
+
+							<span class="wp-cabin-help" title="<?php echo esc_attr__( 'Click a bar to see values.', 'wp-cabin' ); ?>">
+								<span class="dashicons dashicons-info-outline" aria-hidden="true"></span>
+								<span class="screen-reader-text"><?php echo esc_html__( 'Click a bar to see values.', 'wp-cabin' ); ?></span>
+							</span>
 						</div>
 					</div>
 
 					<div class="wp-cabin-chart" aria-hidden="true">
-						<?php echo $chart_svg; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+						<div class="wp-cabin-chart-shell">
+							<?php echo $chart['svg']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+							<?php echo $chart['overlay']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+							<?php echo $chart['popover']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+						</div>
 					</div>
 				</div>
 
@@ -576,12 +588,11 @@ final class WP_Cabin_Dashboard_Widget {
 	}
 
 	/**
-	 * Cabin-style stacked bars:
-	 * - Dark base = unique visitors
-	 * - Light cap = page views minus unique visitors
-	 * Includes <title> per day for hover labels (zero JS) and y-axis labels.
+	 * Returns chart SVG plus an invisible HTML overlay and a single Popover balloon.
+	 * - Baseline hover remains via SVG <title>.
+	 * - Enhanced (modern): click a bar to open an anchored popover.
 	 */
-	private static function views_visitors_stacked_svg( array $daily_data ) : string {
+	private static function views_visitors_stacked_render( array $daily_data ) : array {
 		$points = [];
 
 		foreach ( $daily_data as $row ) {
@@ -610,7 +621,11 @@ final class WP_Cabin_Dashboard_Widget {
 		});
 
 		if ( count( $points ) < 2 ) {
-			return '<div class="notice inline notice-warning"><p>Not enough data to render chart.</p></div>';
+			return [
+				'svg'     => '<div class="notice inline notice-warning"><p>Not enough data to render chart.</p></div>',
+				'overlay' => '',
+				'popover' => '',
+			];
 		}
 
 		$raw_max = 0.0;
@@ -620,7 +635,7 @@ final class WP_Cabin_Dashboard_Widget {
 		$max = self::nice_max( (float) $raw_max );
 		if ( $max <= 0 ) $max = 1.0;
 
-		// Geometry
+		// Geometry (must match overlay percent math)
 		$w = 860;
 		$h = 380;
 
@@ -652,8 +667,9 @@ final class WP_Cabin_Dashboard_Widget {
 		}
 		$svg .= '</g>';
 
-		// Bars (stacked)
-		$svg .= '<g class="bars">';
+		$overlay = '<div class="wp-cabin-overlay" aria-hidden="true">';
+		$bars    = '<g class="bars">';
+
 		for ( $i = 0; $i < $n; $i++ ) {
 			$p = $points[ $i ];
 			$x = $padL + ( $i * ( $barW + $gap ) );
@@ -664,8 +680,11 @@ final class WP_Cabin_Dashboard_Widget {
 			$yUniq = $padT + ( $innerH - $uniqH );
 			$yCap  = $yUniq - $capH;
 
+			$stackTop = $yCap;
+			$stackH   = $uniqH + $capH;
+
 			$ts_sec = (int) floor( $p['ts'] / 1000 );
-			$label  = wp_date( 'M j, Y', $ts_sec );
+			$label  = wp_date( 'D, j M Y', $ts_sec ); // matches your screenshot style
 			$title  = sprintf(
 				'%s — Views: %s, Visitors: %s',
 				$label,
@@ -673,30 +692,77 @@ final class WP_Cabin_Dashboard_Widget {
 				number_format_i18n( (int) $p['uniq'] )
 			);
 
-			$svg .= '<g class="day">';
-			$svg .= '<title>' . esc_html( $title ) . '</title>';
+			$bars .= '<g class="day">';
+			$bars .= '<title>' . esc_html( $title ) . '</title>';
 
 			// Visitors base
-			$svg .= '<rect class="bar bar--visitors" x="' . esc_attr( $x ) . '" y="' . esc_attr( $yUniq ) . '" width="' . esc_attr( $barW ) . '" height="' . esc_attr( $uniqH ) . '" rx="2" />';
+			$bars .= '<rect class="bar bar--visitors" x="' . esc_attr( $x ) . '" y="' . esc_attr( $yUniq ) . '" width="' . esc_attr( $barW ) . '" height="' . esc_attr( $uniqH ) . '" rx="2" />';
 
 			// Views cap
 			if ( $capH > 0 ) {
-				$svg .= '<rect class="bar bar--views-cap" x="' . esc_attr( $x ) . '" y="' . esc_attr( $yCap ) . '" width="' . esc_attr( $barW ) . '" height="' . esc_attr( $capH ) . '" rx="2" />';
+				$bars .= '<rect class="bar bar--views-cap" x="' . esc_attr( $x ) . '" y="' . esc_attr( $yCap ) . '" width="' . esc_attr( $barW ) . '" height="' . esc_attr( $capH ) . '" rx="2" />';
 			}
 
 			// X label
 			if ( 0 === ( $i % $labelEvery ) ) {
 				$short = wp_date( 'M j', $ts_sec );
-				$svg .= '<text class="xlab" x="' . esc_attr( $x + ( $barW / 2 ) ) . '" y="' . esc_attr( $padT + $innerH + 32 ) . '" text-anchor="middle">' . esc_html( $short ) . '</text>';
+				$bars .= '<text class="xlab" x="' . esc_attr( $x + ( $barW / 2 ) ) . '" y="' . esc_attr( $padT + $innerH + 32 ) . '" text-anchor="middle">' . esc_html( $short ) . '</text>';
 			}
 
-			$svg .= '</g>';
-		}
-		$svg .= '</g>';
+			$bars .= '</g>';
 
+			// Overlay button (for popover anchoring)
+			// Convert SVG coords to percentages (overlay uses absolute positioning in same box)
+			$leftPct = ( $x / $w ) * 100;
+			$topPct  = ( $stackTop / $h ) * 100;
+			$wPct    = ( $barW / $w ) * 100;
+			$hPct    = ( $stackH / $h ) * 100;
+
+			// Ensure a minimum clickable height without changing chart geometry.
+			// If the bar is tiny, give the hit target a little extra height (still centered).
+			if ( $hPct < 2.0 ) {
+				$extra = ( 2.0 - $hPct );
+				$topPct = max( 0.0, $topPct - ( $extra / 2.0 ) );
+				$hPct = 2.0;
+			}
+
+			$anchor = '--wp-cabin-a-' . $i;
+
+			$overlay .= sprintf(
+				'<button type="button" class="wp-cabin-hit" style="left:%.4f%%; top:%.4f%%; width:%.4f%%; height:%.4f%%; anchor-name:%s;" data-wp-cabin-anchor="%s" data-label="%s" data-uniq="%s" data-views="%s" aria-label="%s"></button>',
+				$leftPct,
+				$topPct,
+				$wPct,
+				$hPct,
+				esc_attr( $anchor ),
+				esc_attr( $anchor ),
+				esc_attr( $label ),
+				esc_attr( number_format_i18n( (int) $p['uniq'] ) ),
+				esc_attr( number_format_i18n( (int) $p['views'] ) ),
+				esc_attr( $title )
+			);
+		}
+
+		$bars .= '</g>';
+		$overlay .= '</div>';
+
+		$svg .= $bars;
 		$svg .= '</svg>';
 
-		return $svg;
+		$popover =
+			'<div class="wp-cabin-pop" popover id="wp-cabin-popover" aria-hidden="true">' .
+				'<div class="wp-cabin-balloon">' .
+					'<div class="wp-cabin-balloon__title" data-wp-cabin-pop-title></div>' .
+					'<div class="wp-cabin-balloon__row"><span class="sw sw--dark" aria-hidden="true"></span><span data-wp-cabin-pop-uniq></span></div>' .
+					'<div class="wp-cabin-balloon__row"><span class="sw sw--light" aria-hidden="true"></span><span data-wp-cabin-pop-views></span></div>' .
+				'</div>' .
+			'</div>';
+
+		return [
+			'svg'     => $svg,
+			'overlay' => $overlay,
+			'popover' => $popover,
+		];
 	}
 
 	/* -------------------------
@@ -820,17 +886,13 @@ final class WP_Cabin_Dashboard_Widget {
 				text-transform: uppercase;
 				margin: 0 0 8px;
 			}
-			.wp-cabin-spark__chart{
-				width: 100%;
-			}
+			.wp-cabin-spark__chart{ width: 100%; }
 			.wp-cabin-sparkline{
 				width: 100%;
 				height: auto;
 				display: block;
 			}
-			.wp-cabin-spark__desc{
-				margin: 8px 0 0;
-			}
+			.wp-cabin-spark__desc{ margin: 8px 0 0; }
 
 			/* Chart-first layout (chart full width; metrics below) */
 			.wp-cabin-chart-only{
@@ -838,14 +900,12 @@ final class WP_Cabin_Dashboard_Widget {
 				gap: 12px;
 				margin-top: 10px;
 			}
-
 			.wp-cabin-chart-wrap{
 				border: 1px solid #dcdcde;
 				border-radius: 6px;
 				background: #fff;
 				overflow: hidden;
 			}
-
 			.wp-cabin-chart-head{
 				display:flex;
 				justify-content:flex-end;
@@ -853,7 +913,6 @@ final class WP_Cabin_Dashboard_Widget {
 				padding: 10px 12px 6px;
 				border-bottom: 1px solid #f0f0f1;
 			}
-
 			.wp-cabin-legend{
 				display:flex;
 				gap: 12px;
@@ -877,13 +936,31 @@ final class WP_Cabin_Dashboard_Widget {
 				background:#e9ecef;
 				border: 1px solid #dcdcde;
 			}
-			.wp-cabin-legend__swatch.is-visitors{
-				background:#1d2327;
+			.wp-cabin-legend__swatch.is-visitors{ background:#1d2327; }
+
+			/* Option 2: tiny info icon in chart header */
+			.wp-cabin-help{
+				display:inline-flex;
+				align-items:center;
+				gap:6px;
+				color:#646970;
+				margin-left: 6px;
+			}
+			.wp-cabin-help .dashicons{
+				font-size: 16px;
+				width: 16px;
+				height: 16px;
+				line-height: 16px;
 			}
 
 			.wp-cabin-chart{
 				padding: 8px 12px 12px;
 				min-height: 340px;
+			}
+			.wp-cabin-chart-shell{
+				position: relative;
+				width: 100%;
+				height: 100%;
 			}
 			.wp-cabin-vv-chart{
 				width: 100%;
@@ -896,13 +973,88 @@ final class WP_Cabin_Dashboard_Widget {
 			}
 			.wp-cabin-vv-chart .bar--views-cap{ fill: #e9ecef; }
 			.wp-cabin-vv-chart .bar--visitors{ fill: #1d2327; }
+
 			.wp-cabin-vv-chart .xlab,
 			.wp-cabin-vv-chart .ylab{
 				font-size: 12px;
 				fill: #50575e;
 			}
-			.wp-cabin-vv-chart .day:hover .bar{
-				opacity: 0.92;
+			.wp-cabin-vv-chart .day:hover .bar{ opacity: 0.92; }
+			.wp-cabin-vv-chart .bar{ cursor: pointer; }
+
+			/* Overlay hit targets (for popover anchoring) */
+			.wp-cabin-overlay{
+				position: absolute;
+				inset: 0;
+				pointer-events: none;
+				z-index: 5;
+			}
+			.wp-cabin-hit{
+				position: absolute;
+				pointer-events: auto;
+				background: transparent;
+				border: 0;
+				padding: 0;
+				margin: 0;
+				cursor: pointer;
+				border-radius: 4px;
+			}
+			.wp-cabin-hit:focus-visible{
+				outline: 2px solid #2271b1;
+				outline-offset: 2px;
+			}
+
+			/* Popover balloon */
+			.wp-cabin-pop[popover]{
+				border: 0;
+				padding: 0;
+				background: transparent;
+			}
+
+			.wp-cabin-balloon{
+				background: #3b82f6;
+				color: #fff;
+				border-radius: 10px;
+				padding: 14px 16px;
+				box-shadow: 0 10px 25px rgba(0,0,0,0.18);
+				min-width: 240px;
+				max-width: 320px;
+			}
+			.wp-cabin-balloon__title{
+				font-weight: 700;
+				font-size: 16px;
+				margin: 0 0 10px;
+			}
+			.wp-cabin-balloon__row{
+				display:flex;
+				align-items:center;
+				gap: 8px;
+				font-size: 14px;
+				margin: 2px 0;
+			}
+			.wp-cabin-balloon .sw{
+				width: 16px;
+				height: 16px;
+				border-radius: 2px;
+				display:inline-block;
+				border: 1px solid rgba(255,255,255,0.7);
+				flex: 0 0 auto;
+			}
+			.wp-cabin-balloon .sw--dark{ background: #0f172a; }
+			.wp-cabin-balloon .sw--light{ background: rgba(255,255,255,0.25); }
+
+			/* Modern anchored placement (progressive enhancement) */
+			@supports (position-anchor: --a) and (anchor-name: --a) {
+				.wp-cabin-pop[popover]{
+					position: fixed;
+					inset: auto;
+					margin: 0;
+					z-index: 999999;
+					position-anchor: var(--wp-cabin-active-anchor);
+					top: anchor(top);
+					left: anchor(center);
+					translate: -50% -120%;
+				}
 			}
 
 			.wp-cabin-metrics-row{
@@ -941,8 +1093,82 @@ final class WP_Cabin_Dashboard_Widget {
 				.wp-cabin-metrics-row{ grid-template-columns: 1fr; }
 				.wp-cabin-chart{ min-height: 260px; }
 				.wp-cabin-metric-card__value{ font-size: 28px; }
+				.wp-cabin-balloon{ min-width: 200px; }
 			}
 		</style>
+		<?php
+	}
+
+	/* -------------------------
+	 * Admin JS (dashboard only)
+	 * ------------------------- */
+
+	public static function admin_js() : void {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( ! $screen || 'dashboard' !== $screen->id ) {
+			return;
+		}
+		?>
+		<script>
+			(() => {
+				const widget = document.getElementById('wp_cabin_dashboard_widget');
+				if (!widget) return;
+
+				const pop = widget.querySelector('#wp-cabin-popover');
+				if (!pop || typeof pop.showPopover !== 'function') return;
+
+				// Require modern anchor positioning; otherwise fallback remains SVG <title>.
+				if (!(window.CSS && CSS.supports && CSS.supports('position-anchor: --a') && CSS.supports('anchor-name: --a'))) {
+					return;
+				}
+
+				const titleEl = pop.querySelector('[data-wp-cabin-pop-title]');
+				const uniqEl  = pop.querySelector('[data-wp-cabin-pop-uniq]');
+				const viewsEl = pop.querySelector('[data-wp-cabin-pop-views]');
+
+				function setText(el, text) {
+					if (!el) return;
+					el.textContent = text;
+				}
+
+				widget.querySelectorAll('.wp-cabin-hit').forEach((btn) => {
+					btn.addEventListener('click', () => {
+						const anchor = btn.getAttribute('data-wp-cabin-anchor') || '';
+						if (!anchor) return;
+
+						// Set anchor token for CSS: position-anchor: var(--wp-cabin-active-anchor)
+						pop.style.setProperty('--wp-cabin-active-anchor', anchor);
+
+						const label = btn.getAttribute('data-label') || '';
+						const uniq  = btn.getAttribute('data-uniq') || '';
+						const views = btn.getAttribute('data-views') || '';
+
+						setText(titleEl, label);
+						setText(uniqEl, `Unique visitors: ${uniq}`);
+						setText(viewsEl, `Total visitors: ${views}`);
+
+						pop.showPopover();
+					});
+
+					// Keyboard: Enter/Space activates
+					btn.addEventListener('keydown', (e) => {
+						if (e.key === 'Enter' || e.key === ' ') {
+							e.preventDefault();
+							btn.click();
+						}
+					});
+				});
+
+				// Click outside to close (popover already closes on Esc)
+				document.addEventListener('mousedown', (e) => {
+					if (!pop.matches(':popover-open')) return;
+					const inside = pop.contains(e.target);
+					if (!inside) {
+						pop.hidePopover();
+					}
+				});
+			})();
+		</script>
 		<?php
 	}
 }
