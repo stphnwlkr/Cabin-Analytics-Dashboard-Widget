@@ -79,7 +79,11 @@ From the same settings page:
 
 ---
 
-<img width="2062" height="671" alt="image" src="https://github.com/user-attachments/assets/4da2a7f8-eb1a-461a-b522-29908fe8c87b" />
+<img width="899" height="672" alt="image" src="https://github.com/user-attachments/assets/768ff04f-af34-4dc7-9aac-d8f818a07fa0" />
+
+<img width="904" height="508" alt="image" src="https://github.com/user-attachments/assets/3942ecfe-88e0-4395-83ec-220d879797f2" />
+
+<img width="745" height="617" alt="image" src="https://github.com/user-attachments/assets/5519233f-fcf1-461f-8e12-7387c00660d6" />
 
 
 ## Dashboard Usage
