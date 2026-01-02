@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Cabin Analytics Dashboard Widget
  * Description:       WordPress-native dashboard widget for Cabin Analytics (Summary + larger sparkline OR Cabin-style stacked Views/Visitors chart).
- * Version:           1.1.0
+ * Version:           1.1.1
  * Requires at least: 6.9
  * Requires PHP:      8.3
  * Author:            Stephen Walker
@@ -457,20 +457,17 @@ final class WP_Cabin_Dashboard_Widget {
 	}
 
 	private static function range_dates( string $range ) : array {
-		$today = gmdate( 'Y-m-d' );
+	$tz  = wp_timezone();
+	$now = new DateTimeImmutable( 'now', $tz );
+	$today = $now->format( 'Y-m-d' );
 
-		$days = 14;
-		if ( '7d' === $range ) {
-			$days = 7;
-		} elseif ( '30d' === $range ) {
-			$days = 30;
-		}
+	$days = ( '30d' === $range ) ? 30 : ( ( '7d' === $range ) ? 7 : 14 );
 
-		$from_ts   = time() - ( ( $days - 1 ) * DAY_IN_SECONDS );
-		$date_from = gmdate( 'Y-m-d', $from_ts );
+	// Inclusive buckets: last N days including today => start = today - (N-1)
+	$from = $now->sub( new DateInterval( 'P' . ( $days - 1 ) . 'D' ) )->format( 'Y-m-d' );
 
-		return [ $date_from, $today ];
-	}
+	return [ $from, $today ];
+}
 
 	private static function cache_key( string $domain, string $range, string $mode ) : string {
 		return 'wp_cabin_' . md5( $domain . '|' . $range . '|' . $mode );
@@ -684,7 +681,8 @@ final class WP_Cabin_Dashboard_Widget {
 			$stackH   = $uniqH + $capH;
 
 			$ts_sec = (int) floor( $p['ts'] / 1000 );
-			$label  = wp_date( 'D, j M Y', $ts_sec ); // matches your screenshot style
+			$utc = new DateTimeZone( 'UTC' );
+			$label = wp_date( 'D, j M Y', $ts_sec, $utc );
 			$title  = sprintf(
 				'%s — Views: %s, Visitors: %s',
 				$label,
@@ -705,7 +703,7 @@ final class WP_Cabin_Dashboard_Widget {
 
 			// X label
 			if ( 0 === ( $i % $labelEvery ) ) {
-				$short = wp_date( 'M j', $ts_sec );
+				$short = wp_date( 'M j', $ts_sec, $utc );
 				$bars .= '<text class="xlab" x="' . esc_attr( $x + ( $barW / 2 ) ) . '" y="' . esc_attr( $padT + $innerH + 32 ) . '" text-anchor="middle">' . esc_html( $short ) . '</text>';
 			}
 
