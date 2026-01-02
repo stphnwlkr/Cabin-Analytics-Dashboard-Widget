@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Cabin Analytics Dashboard Widget
  * Description:       WordPress-native dashboard widget for Cabin Analytics (Summary + larger sparkline OR Cabin-style stacked Views/Visitors chart).
- * Version:           1.1.1
+ * Version:           1.1.2
  * Requires at least: 6.9
  * Requires PHP:      8.3
  * Author:            Stephen Walker
@@ -1038,8 +1038,8 @@ final class WP_Cabin_Dashboard_Widget {
 				border: 1px solid rgba(255,255,255,0.7);
 				flex: 0 0 auto;
 			}
-			.wp-cabin-balloon .sw--dark{ background: #0f172a; }
-			.wp-cabin-balloon .sw--light{ background: rgba(255,255,255,0.25); }
+			.wp-cabin-balloon .sw--dark{ background: #000; }
+			.wp-cabin-balloon .sw--light{ background: #e9ecef; }
 
 			/* Modern anchored placement (progressive enhancement) */
 			@supports (position-anchor: --a) and (anchor-name: --a) {
@@ -1143,7 +1143,7 @@ final class WP_Cabin_Dashboard_Widget {
 
 						setText(titleEl, label);
 						setText(uniqEl, `Unique visitors: ${uniq}`);
-						setText(viewsEl, `Total visitors: ${views}`);
+						setText(viewsEl, `Total views: ${views}`);
 
 						pop.showPopover();
 					});
