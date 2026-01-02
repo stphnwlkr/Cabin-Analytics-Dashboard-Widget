@@ -73,8 +73,8 @@ From the same settings page:
   - Sparkline (minimal)
   - Chart (Cabin-style)
 - **Default Date Range**
-  - Today
   - 7 days
+  - 14 days
   - 30 days
 
 ---
